@@ -202,8 +202,11 @@ module.exports = function(db) {
     }
 
     let newPasswordHash = clip.password_hash;
-    if (new_password !== undefined && clip.access_mode !== 'full_public') {
+    const effectiveMode = access_mode || clip.access_mode;
+    if (new_password !== undefined && effectiveMode !== 'full_public') {
       newPasswordHash = new_password === '' ? null : bcrypt.hashSync(new_password, BCRYPT_ROUNDS);
+    } else if (effectiveMode === 'full_public' && new_password === undefined) {
+      newPasswordHash = null;
     }
 
     const newExpiry = expiry_mode ? recalcExpiry(expiry_mode) : clip.expires_at;
