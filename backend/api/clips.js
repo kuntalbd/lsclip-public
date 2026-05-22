@@ -6,6 +6,24 @@ const fs = require('fs');
 
 const UPLOADS_PATH = process.env.UPLOADS_PATH || './uploads';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
+
+async function verifyTurnstile(token) {
+  if (!TURNSTILE_SECRET_KEY || !token) return true;
+  try {
+    const formData = new URLSearchParams();
+    formData.append('secret', TURNSTILE_SECRET_KEY);
+    formData.append('response', token);
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await r.json();
+    return data.success === true;
+  } catch {
+    return false;
+  }
+}
 
 function generateSlug() {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -37,8 +55,17 @@ function getRemoteIp(req) {
 module.exports = function(db) {
   const router = express.Router();
 
-  router.post('/clips', (req, res) => {
-    const { slug: customSlug, content, clip_type, access_mode, password, expiry_mode, syntax_language } = req.body;
+  router.post('/clips', async (req, res) => {
+    const { slug: customSlug, content, clip_type, access_mode, password, expiry_mode, syntax_language, turnstile_token } = req.body;
+
+    if (content && content.length > 500 * 1024) {
+      return res.status(400).json({ error: 'Content exceeds 500 KB limit.' });
+    }
+
+    const tsOk = await verifyTurnstile(turnstile_token);
+    if (!tsOk) {
+      return res.status(400).json({ error: 'Security verification failed. Please refresh and try again.' });
+    }
 
     let slug = customSlug ? customSlug.toLowerCase().trim() : generateSlug();
 
@@ -147,9 +174,9 @@ module.exports = function(db) {
     });
   });
 
-  router.put('/clips/:slug', (req, res) => {
+  router.put('/clips/:slug', async (req, res) => {
     const slug = req.params.slug.toLowerCase();
-    const { content, password, new_password, access_mode, expiry_mode, clip_type, syntax_language } = req.body;
+    const { content, password, new_password, access_mode, expiry_mode, clip_type, syntax_language, turnstile_token } = req.body;
 
     const result = db.exec('SELECT * FROM clips WHERE slug = ?', [slug]);
     if (!result[0] || !result[0].values || result[0].values.length === 0) {
@@ -159,10 +186,19 @@ module.exports = function(db) {
     const columns = result[0].columns;
     const clip = rowToObject(result[0], 0, columns);
 
+    if (content && content.length > 500 * 1024) {
+      return res.status(400).json({ error: 'Content exceeds 500 KB limit.' });
+    }
+
     if (clip.access_mode !== 'full_public') {
       if (!password || !bcrypt.compareSync(password, clip.password_hash || '')) {
         return res.status(403).json({ error: 'Invalid password.', locked: true });
       }
+    }
+
+    const tsOk = await verifyTurnstile(turnstile_token);
+    if (!tsOk) {
+      return res.status(400).json({ error: 'Security verification failed. Please refresh and try again.' });
     }
 
     let newPasswordHash = clip.password_hash;

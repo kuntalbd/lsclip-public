@@ -69,6 +69,16 @@ async function start() {
     message: { error: 'Too many requests, please try again later.' }
   }));
 
+  const saveLimit = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 10,
+    skip: (req) => req.method === 'GET',
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many saves. Please wait a few minutes.' }
+  });
+  app.use('/api/clips', saveLimit);
+
   app.use((req, res, next) => {
     res.locals.BASE_URL = BASE_URL;
     res.locals.TURNSTILE_SITE_KEY = TURNSTILE_SITE_KEY;

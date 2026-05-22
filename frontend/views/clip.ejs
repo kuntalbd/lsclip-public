@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<% if (TURNSTILE_SITE_KEY) { %><script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=__turnstileLoad" async defer></script><% } %>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/highlight.min.js"></script>
 </head>
 <body data-theme="white">
 <div class="app">
@@ -79,6 +82,8 @@
       <span class="toolbar-sep"></span>
       <button class="toolbar-btn" data-tiptap="link" title="Hyperlink">&#128279;</button>
       <span class="toolbar-sep"></span>
+      <button class="toolbar-btn" data-tiptap="codeBlock" title="Code Block">&lt;/&gt;</button>
+      <span class="toolbar-sep"></span>
       <div class="color-wrapper">
         <button class="toolbar-btn" title="Font Color">
           <span style="display:flex;align-items:center;gap:4px;">
@@ -91,6 +96,7 @@
     <div class="editor-content" id="editorContent"></div>
     <div class="editor-footer">
       <span class="count-display" id="charWordCount">0 chars &middot; 0 words</span>
+      <div id="turnstileContainer" class="hidden"><div id="turnstileWidget"></div></div>
       <div class="action-bar" id="actionBar"></div>
     </div>
   </div>
@@ -254,14 +260,47 @@ import Color from 'https://esm.sh/@tiptap/extension-color@2.11.5';
 
 const SLUG = '<%= slug %>';
 const BASE_URL = '<%= BASE_URL %>';
+const TURNSTILE_SITE_KEY = '<%= TURNSTILE_SITE_KEY %>';
 let clipData = null;
 let editMode = false;
 let savedContent = '';
 let autoSaveTimer = null;
 let isUnsaved = false;
 let editor = null;
+let turnstileWidgetId = null;
+let turnstileResolve = null;
 
 LSClip.init({ BASE_URL });
+
+if (TURNSTILE_SITE_KEY) {
+  window.__turnstileLoad = function() {
+    if (!document.getElementById('turnstileWidget')) return;
+    turnstileWidgetId = turnstile.render('#turnstileWidget', {
+      sitekey: TURNSTILE_SITE_KEY,
+      size: 'invisible',
+      callback: function(token) {
+        if (turnstileResolve) { turnstileResolve(token); turnstileResolve = null; }
+      },
+      'expired-callback': function() {
+        LSClip.toast('Verification expired. Please try again.', 'error');
+      },
+      'error-callback': function() {
+        LSClip.toast('Human verification failed.', 'error');
+        if (turnstileResolve) { turnstileResolve(null); turnstileResolve = null; }
+      }
+    });
+  };
+}
+
+async function getTurnstileToken() {
+  if (!TURNSTILE_SITE_KEY || !turnstileWidgetId) return null;
+  const token = await new Promise(function(resolve) {
+    turnstileResolve = resolve;
+    turnstile.execute(turnstileWidgetId);
+    setTimeout(function() { if (turnstileResolve) { turnstileResolve(null); turnstileResolve = null; } }, 60000);
+  });
+  return token;
+}
 
 function initEditor(content) {
   if (editor) { editor.destroy(); editor = null; }
@@ -269,7 +308,7 @@ function initEditor(content) {
     element: document.getElementById('editorContent'),
     extensions: [
       StarterKit.configure({
-        heading: false, codeBlock: false, blockquote: false,
+        heading: false, blockquote: false,
         horizontalRule: false, orderedList: false, strike: false,
         code: false, hardBreak: false,
       }),
@@ -317,6 +356,7 @@ function setupToolbar() {
         case 'italic': editor.chain().focus().toggleItalic().run(); break;
         case 'underline': editor.chain().focus().toggleUnderline().run(); break;
         case 'bulletList': editor.chain().focus().toggleBulletList().run(); break;
+        case 'codeBlock': editor.chain().focus().toggleCodeBlock().run(); break;
         case 'link': {
           const prev = editor.getAttributes('link').href || '';
           const url = window.prompt('Link URL:', prev);
@@ -442,19 +482,42 @@ function showEditor(isNew) {
   }
   setupKeyboardShortcuts();
   setupToolbar();
+  highlightCodeBlocks();
+}
+
+function highlightCodeBlocks() {
+  if (typeof hljs === 'undefined') return;
+  if (clipData && clipData.clip_type === 'code' && clipData.syntax_language) {
+    setTimeout(() => {
+      document.querySelectorAll('.editor-content pre code').forEach(block => {
+        block.removeAttribute('data-highlighted');
+        block.classList.remove('hljs');
+        if (clipData.syntax_language) {
+          block.classList.add('language-' + clipData.syntax_language);
+        }
+        hljs.highlightElement(block);
+      });
+    }, 100);
+  }
 }
 
 function updateStats() {
   if (!clipData) return;
   const stats = document.getElementById('clipStats');
   const typeMap = { text: 'Text', note: 'Note', code: 'Code', link: 'Link' };
+  const typeTip = { text: 'Plain text without formatting', note: 'Formatted rich text notes', code: 'Code snippet with syntax highlighting', link: 'A shareable URL bookmark' };
   const modeMap = { full_public: 'Full Public', readonly_public: 'Read-only', private: 'Private' };
+  const modeTip = { full_public: 'Anyone can view, edit, and delete this clip', readonly_public: 'Anyone can view. Password required to edit or delete', private: 'Password required to view, edit, or delete' };
   const expiryMap = { single_view: 'Single View', '15d': '15d', '1m': '1m', '3m': '3m', '6m': '6m' };
+  const expiryTip = { single_view: 'Deleted after first access. No rolling.', '15d': 'Expires 15 days from last visit', '1m': 'Expires 30 days from last visit', '3m': 'Expires 90 days from last visit', '6m': 'Expires 180 days from last visit' };
+  const lastVisited = clipData.last_visited_at ? new Date(clipData.last_visited_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never';
+  const expiresAt = clipData.expires_at ? new Date(clipData.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
   let html = '';
-  html += '<span class="badge accent">' + (typeMap[clipData.clip_type] || clipData.clip_type) + '</span>';
-  html += '<span class="badge">' + (modeMap[clipData.access_mode] || clipData.access_mode) + '</span>';
-  html += '<span class="badge">&#128064; ' + (clipData.visit_count || 0) + ' views</span>';
-  html += '<span class="badge">&#128259; ' + (expiryMap[clipData.expiry_mode] || clipData.expiry_mode) + '</span>';
+  html += '<span class="badge accent" data-tooltip="' + (typeTip[clipData.clip_type] || '') + '">' + (typeMap[clipData.clip_type] || clipData.clip_type) + '</span>';
+  html += '<span class="badge" data-tooltip="' + (modeTip[clipData.access_mode] || '') + '">' + (modeMap[clipData.access_mode] || clipData.access_mode) + '</span>';
+  html += '<span class="badge" data-tooltip="Viewed ' + (clipData.visit_count || 0) + ' times. Last: ' + lastVisited + '">&#128064; ' + (clipData.visit_count || 0) + ' views</span>';
+  html += '<span class="badge" data-tooltip="' + (expiryTip[clipData.expiry_mode] || '') + (expiresAt ? ' Expires: ' + expiresAt : '') + '">&#128259; ' + (expiryMap[clipData.expiry_mode] || clipData.expiry_mode) + '</span>';
   stats.innerHTML = html;
   if (clipData.clip_type) {
     const p = document.getElementById('clipTypePills');
@@ -557,6 +620,13 @@ async function saveClip() {
   }
   const body = { content, clip_type: clipType, access_mode: accessMode, expiry_mode: expiryMode, syntax_language: syntaxLang || null };
   if (accessMode !== 'full_public') body.password = pw1;
+
+  if (TURNSTILE_SITE_KEY) {
+    const tt = await getTurnstileToken();
+    if (!tt) { LSClip.toast('Verification required to save.', 'error'); btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg><span>Save</span>'; return; }
+    body.turnstile_token = tt;
+  }
+
   const url = '/api/clips/' + encodeURIComponent(SLUG);
   const method = clipData ? 'PUT' : 'POST';
   if (clipData) { const spw = sessionStorage.getItem('lsclip-pw-' + SLUG); if (spw) body.password = spw; }
