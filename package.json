@@ -1,0 +1,22 @@
+{
+  "name": "lsclip",
+  "version": "1.0.0",
+  "description": "LS Clip — a minimal, professional clipboard/snippet sharing web app",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "sql.js": "^1.11.0",
+    "bcryptjs": "^2.4.3",
+    "express-rate-limit": "^7.4.1",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.4.7",
+    "qrcode": "^1.5.4",
+    "nanoid": "^3.3.8",
+    "ejs": "^3.1.10"
+  }
+}

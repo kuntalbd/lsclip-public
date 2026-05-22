@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  lsclip-app:
+    build: .
+    container_name: lsclip-app
+    restart: unless-stopped
+    ports:
+      - "8743:3000"
+    volumes:
+      - /disk1/container/lsclip:/app/data
+      - /disk1/container/lsclip/uploads:/app/uploads
+    environment:
+      - PORT=3000
+      - DB_PATH=/app/data/lsclip.db
+      - UPLOADS_PATH=/app/uploads
+      - TURNSTILE_SITE_KEY=
+      - TURNSTILE_SECRET_KEY=
+      - BCRYPT_ROUNDS=12
+      - BASE_URL=https://clip.logicshift.org
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  proxy:
+    name: proxy
+    external: true
