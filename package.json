@@ -2,10 +2,10 @@
   "name": "lsclip",
   "version": "1.0.0",
   "description": "LS Clip — a minimal, professional clipboard/snippet sharing web app",
-  "main": "src/index.js",
+  "main": "backend/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node src/index.js"
+    "start": "node backend/index.js",
+    "dev": "node backend/index.js"
   },
   "dependencies": {
     "express": "^4.21.0",

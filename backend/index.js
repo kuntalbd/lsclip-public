@@ -14,12 +14,14 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '';
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
 
+const PROJECT_ROOT = path.join(__dirname, '..');
+
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 if (!fs.existsSync(UPLOADS_PATH)) fs.mkdirSync(UPLOADS_PATH, { recursive: true });
 
-const { connect } = require('./db/connection');
-const initSchema = require('./db/schema');
+const { connect } = require(path.join(PROJECT_ROOT, 'db', 'connection'));
+const initSchema = require(path.join(PROJECT_ROOT, 'db', 'schema'));
 
 async function start() {
   const db = await connect(DB_PATH);
@@ -53,11 +55,11 @@ async function start() {
   const app = express();
 
   app.set('view engine', 'ejs');
-  app.set('views', path.join(__dirname, 'views'));
+  app.set('views', path.join(PROJECT_ROOT, 'frontend', 'views'));
 
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.static(path.join(PROJECT_ROOT, 'frontend', 'public')));
 
   app.use('/api', rateLimit({
     windowMs: 5 * 60 * 1000,
@@ -73,9 +75,9 @@ async function start() {
     next();
   });
 
-  const healthRoute = require('./routes/health');
-  const clipRoutes = require('./routes/clips');
-  const fileRoutes = require('./routes/files');
+  const healthRoute = require('./api/health');
+  const clipRoutes = require('./api/clips');
+  const fileRoutes = require('./api/files');
 
   app.use('/health', healthRoute());
   app.use('/api', clipRoutes(db));

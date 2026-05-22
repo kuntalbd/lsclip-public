@@ -5,6 +5,7 @@ A minimal, professional clipboard/snippet sharing web app. Create a clip, get a 
 ## Quick Start (Local)
 
 ```bash
+cd src/
 npm install
 cp .env.example .env   # edit as needed
 npm start
@@ -15,6 +16,7 @@ Open `http://localhost:3000`.
 ## Quick Start (Docker)
 
 ```bash
+cd src/deploy/
 docker-compose up -d --build
 ```
 
@@ -49,23 +51,31 @@ Open `http://localhost:8743`.
 ## Project Structure
 
 ```
-├── index.js              # Express server entry point
+src/
+├── backend/
+│   ├── index.js              # Express server entry point
+│   └── api/
+│       ├── health.js          # Health endpoint
+│       ├── clips.js           # Clip CRUD + slug check
+│       └── files.js           # File upload/download/delete
 ├── db/
-│   ├── connection.js     # SQLite connection (sql.js)
-│   └── schema.js         # Database schema
-├── routes/
-│   ├── health.js          # Health endpoint
-│   ├── clips.js           # Clip CRUD + slug check
-│   └── files.js           # File upload/download/delete
-├── public/               # Static frontend assets
-├── views/                # EJS server templates
-├── data/                 # SQLite database (gitignored)
-├── uploads/              # Uploaded files (gitignored)
-├── Dockerfile
-├── docker-compose.yml
+│   ├── connection.js          # SQLite connection (sql.js)
+│   └── schema.js              # Database schema
+├── frontend/
+│   ├── public/                 # Static assets (HTML, CSS, JS)
+│   │   ├── css/
+│   │   ├── js/
+│   │   └── assets/
+│   └── views/                 # EJS server templates
+├── deploy/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── data/                      # SQLite database (gitignored)
+├── uploads/                   # Uploaded files (gitignored)
 ├── package.json
 ├── .env.example
-└── .gitignore
+├── .gitignore
+└── README.md
 ```
 
 ## License
