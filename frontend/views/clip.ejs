@@ -3,9 +3,777 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><%= slug %> — LS Clip</title>
+<title>/<%= slug %> &mdash; LS Clip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
 </head>
-<body>
-<h1>Loading...</h1>
+<body data-theme="white">
+<div class="app">
+
+<header>
+  <a class="logo" href="/">
+    <div class="logo-mark">&#8249;LS&#8250;</div>
+    <div>
+      <div class="brand-title">Clip</div>
+      <div class="brand-sub">Logic Shift</div>
+    </div>
+  </a>
+  <div class="header-right">
+    <div class="header-url"><strong><%= BASE_URL %>/<%= slug %></strong></div>
+    <a class="nav-link" href="/help">Help</a>
+    <a class="nav-link" href="/about">About</a>
+    <div class="theme-toggle">
+      <button class="theme-btn active" data-theme="white" onclick="LSClip.setTheme('white')">White</button>
+      <button class="theme-btn" data-theme="dark" onclick="LSClip.setTheme('dark')">Dark</button>
+      <button class="theme-btn" data-theme="paper" onclick="LSClip.setTheme('paper')">Paper</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- LOCK SCREEN (shown for private clips before password) -->
+<div id="lockScreen" class="hidden">
+  <div class="lock-screen fade-in">
+    <div class="lock-icon">&#128274;</div>
+    <div class="lock-title">/<%= slug %></div>
+    <div class="lock-sub">This clip is password protected. Enter the password to view or edit it.</div>
+    <div class="field" style="max-width:320px;">
+      <label>Password</label>
+      <input type="password" id="lockPassword" placeholder="Enter password&hellip;">
+      <div class="hint error hidden" id="lockError">Incorrect password. Try again.</div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-primary" id="unlockBtn" onclick="unlockPrivate()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 11V7a4 4 0 0 1 8 0v4M5 11h14l1 10H4z"/></svg>
+        Unlock
+      </button>
+      <a class="btn btn-ghost" href="/">&larr; Back</a>
+    </div>
+    <div style="font-size:12px;color:var(--text-subtle);margin-top:8px;">No password recovery. If lost, the clip remains locked until expiry.</div>
+  </div>
+</div>
+
+<!-- CLIP EDITOR (main view) -->
+<div id="clipEditor" class="clip-screen hidden">
+  <div class="clip-meta">
+    <div class="clip-slug-display">
+      <span class="dim">/</span><span class="accent"><%= slug %></span>
+      <button class="clip-slug-copy" title="Copy URL" onclick="copyUrl()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+    <div class="clip-stats" id="clipStats"></div>
+  </div>
+
+  <!-- Editor Wrap -->
+  <div class="editor-wrap" id="editorWrap">
+    <div class="toolbar" id="toolbar">
+      <button class="toolbar-btn" data-action="bold" title="Bold"><b>B</b></button>
+      <button class="toolbar-btn" data-action="italic" title="Italic"><i>I</i></button>
+      <button class="toolbar-btn" data-action="underline" title="Underline"><u>U</u></button>
+      <span class="toolbar-sep"></span>
+      <button class="toolbar-btn" data-action="bulletList" title="Bullet List">&bull; List</button>
+      <span class="toolbar-sep"></span>
+      <button class="toolbar-btn" data-action="link" title="Hyperlink">&#128279;</button>
+      <span class="toolbar-sep"></span>
+      <button class="toolbar-btn" data-action="codeBlock" title="Code Block">&lt;/&gt;</button>
+    </div>
+    <div class="editor-content" id="editorContent" contenteditable="true"></div>
+    <div class="editor-footer">
+      <span class="count-display" id="charWordCount">0 chars &middot; 0 words</span>
+      <div class="action-bar" id="actionBar"></div>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div class="settings-panel hidden" id="settingsPanel">
+    <div class="settings-header" onclick="LSClip.toggleSettings = LSClip.toggleSettings || toggleSettings; toggleSettings()">
+      <h3>&#9881; Clip Settings</h3>
+      <span class="settings-chevron" id="settingsChevron">&#9650;</span>
+    </div>
+    <div class="settings-body">
+      <div class="field-row">
+        <div class="field" style="flex:1.2">
+          <label>Access Mode</label>
+          <div class="pill-group" id="accessModePills">
+            <div class="pill active" data-mode="full_public" onclick="selectAccessMode(this)">Full Public</div>
+            <div class="pill" data-mode="readonly_public" onclick="selectAccessMode(this)">Read-only</div>
+            <div class="pill" data-mode="private" onclick="selectAccessMode(this)">Private</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Expiry</label>
+          <div class="pill-group" id="expiryPills">
+            <div class="pill" data-mode="single_view" onclick="selectPill('expiryPills', this)">Single View</div>
+            <div class="pill active" data-mode="15d" onclick="selectPill('expiryPills', this)">15 days</div>
+            <div class="pill" data-mode="1m" onclick="selectPill('expiryPills', this)">1 month</div>
+            <div class="pill" data-mode="3m" onclick="selectPill('expiryPills', this)">3 months</div>
+            <div class="pill" data-mode="6m" onclick="selectPill('expiryPills', this)">6 months</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="password-fields hidden" id="passwordFields">
+        <div class="field-row">
+          <div class="field">
+            <label>Password</label>
+            <input type="password" id="pw1" placeholder="Enter password&hellip;">
+            <div class="hint">Required for Read-only and Private modes</div>
+          </div>
+          <div class="field">
+            <label>Confirm Password</label>
+            <input type="password" id="pw2" placeholder="Confirm password&hellip;">
+          </div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Clip Type</label>
+          <div class="pill-group" id="clipTypePills">
+            <div class="pill" data-mode="text" onclick="selectPill('clipTypePills', this)">Text</div>
+            <div class="pill active" data-mode="note" onclick="selectPill('clipTypePills', this)">Note</div>
+            <div class="pill" data-mode="code" onclick="selectPill('clipTypePills', this)">Code</div>
+            <div class="pill" data-mode="link" onclick="selectPill('clipTypePills', this)">Link</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Syntax Language</label>
+          <select id="syntaxLang">
+            <option value="">None</option>
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="html">HTML / CSS</option>
+            <option value="go">Go</option>
+            <option value="rust">Rust</option>
+            <option value="java">Java</option>
+            <option value="bash">Bash / Shell</option>
+          </select>
+          <div class="hint">Only applies when clip type is Code</div>
+        </div>
+      </div>
+
+      <div class="field" id="fileUploadField">
+        <label>File Attachment (max 20 MB)</label>
+        <div class="file-area" id="fileArea" onclick="document.getElementById('fileInput').click()">
+          <div style="font-size:28px">&#128206;</div>
+          <div style="margin-top:8px">Click to upload or drag &amp; drop</div>
+          <div class="hint" style="margin-top:4px;text-align:center">File expires in 3 days. Cannot be extended. Must delete before uploading a new file.</div>
+          <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(event)">
+        </div>
+      </div>
+
+      <div id="fileInfoRow" class="file-info-row hidden">
+        <div class="file-details">
+          <span>&#128206;</span>
+          <span id="fileName" style="font-weight:600"></span>
+          <span id="fileSize" style="color:var(--text-muted);font-size:13px"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="fileMeta" style="font-size:12px;color:var(--text-muted)"></span>
+          <button class="btn btn-danger btn-sm" onclick="deleteFile()">&#128465; Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  <span>Self-hosted &middot; Minimal &middot; Open Source</span>
+  <span id="footerSlug">/<%= slug %></span>
+</footer>
+
+</div>
+
+<!-- QR Modal -->
+<div class="modal-overlay" id="qrModal">
+  <div class="modal">
+    <h3>&#9633; QR Code</h3>
+    <div id="qrCodeContainer" style="width:180px;height:180px;background:var(--surface-2);border:1px solid var(--border);margin:0 auto;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;border-radius:var(--radius);">
+      <span>Loading&hellip;</span>
+    </div>
+    <p id="qrUrl" style="text-align:center;font-family:var(--font-mono);word-break:break-all;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="LSClip.closeModal('qrModal')">Close</button>
+      <button class="btn btn-ghost btn-sm" onclick="copyUrl()">Copy URL</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Delete Clip</h3>
+    <p>Are you sure you want to delete <strong>/<%= slug %></strong>? This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="LSClip.closeModal('deleteModal')">Cancel</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteClip()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password Unlock Modal (for readonly) -->
+<div class="modal-overlay" id="passwordModal">
+  <div class="modal">
+    <h3>&#128275; Enter Password</h3>
+    <p>This clip is read-only public. Enter the password to edit or delete it.</p>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="modalPassword" placeholder="Enter password&hellip;" style="width:100%">
+      <div class="hint error hidden" id="modalPwError">Incorrect password.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="LSClip.closeModal('passwordModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="unlockReadonly()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="/js/app.js"></script>
+<script>
+const SLUG = '<%= slug %>';
+const BASE_URL = '<%= BASE_URL %>';
+let clipData = null;
+let editMode = false;
+let savedContent = '';
+let autoSaveTimer = null;
+let isUnsaved = false;
+
+LSClip.init({ BASE_URL });
+
+async function loadClip() {
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG));
+    if (!r.ok) {
+      if (r.status === 404) {
+        clipData = null;
+        editMode = true;
+        showEditor(true);
+      } else {
+        LSClip.toast('Error loading clip', 'error');
+      }
+      return;
+    }
+    const pw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+    clipData = await r.json();
+
+    if (clipData.access_mode === 'private') {
+      if (pw) {
+        tryUnlockWithPassword(pw);
+      } else {
+        showLockScreen();
+      }
+    } else if (clipData.access_mode === 'readonly_public') {
+      if (pw) {
+        tryUnlockReadonly(pw);
+      } else {
+        showReadonlyView();
+      }
+    } else {
+      editMode = true;
+      showEditor(false);
+    }
+  } catch {
+    LSClip.toast('Network error', 'error');
+  }
+}
+
+async function tryUnlockWithPassword(pw) {
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    if (r.ok) {
+      sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
+      clipData = await r.json();
+      editMode = true;
+      showEditor(false);
+    } else {
+      showLockScreen();
+    }
+  } catch {
+    showLockScreen();
+  }
+}
+
+async function tryUnlockReadonly(pw) {
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    if (r.ok) {
+      sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
+      clipData = await r.json();
+      editMode = true;
+      showEditor(false);
+    } else {
+      showReadonlyView();
+    }
+  } catch {
+    showReadonlyView();
+  }
+}
+
+function showLockScreen() {
+  document.getElementById('lockScreen').classList.remove('hidden');
+  document.getElementById('clipEditor').classList.add('hidden');
+}
+
+async function unlockPrivate() {
+  const pw = document.getElementById('lockPassword').value;
+  if (!pw) return;
+  const btn = document.getElementById('unlockBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span> Unlocking&hellip;';
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    if (r.ok) {
+      sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
+      clipData = await r.json();
+      editMode = true;
+      showEditor(false);
+    } else {
+      document.getElementById('lockError').classList.remove('hidden');
+    }
+  } catch {
+    LSClip.toast('Network error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 11V7a4 4 0 0 1 8 0v4M5 11h14l1 10H4z"/></svg> Unlock';
+  }
+}
+
+function showReadonlyView() {
+  document.getElementById('editorWrap').classList.add('readonly');
+  showEditor(false);
+  const editor = document.getElementById('editorContent');
+  editor.contentEditable = 'false';
+  editor.style.cursor = 'default';
+  editor.style.background = 'var(--bg)';
+  document.getElementById('toolbar').classList.add('hidden');
+  renderActionButtonsReadonly();
+}
+
+async function unlockReadonly() {
+  const pw = document.getElementById('modalPassword').value;
+  if (!pw) return;
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    if (r.ok) {
+      sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
+      clipData = await r.json();
+      editMode = true;
+      LSClip.closeModal('passwordModal');
+      showEditor(false);
+      const editor = document.getElementById('editorContent');
+      editor.contentEditable = 'true';
+      editor.style.cursor = '';
+      editor.style.background = '';
+      document.getElementById('toolbar').classList.remove('hidden');
+      renderActionButtonsEdit();
+    } else {
+      document.getElementById('modalPwError').classList.remove('hidden');
+    }
+  } catch {
+    LSClip.toast('Network error', 'error');
+  }
+}
+
+function showEditor(isNew) {
+  document.getElementById('lockScreen').classList.add('hidden');
+  document.getElementById('clipEditor').classList.remove('hidden');
+
+  if (clipData) {
+    const editor = document.getElementById('editorContent');
+    editor.innerHTML = clipData.content || '';
+    savedContent = clipData.content || '';
+    document.getElementById('editorWrap').classList.remove('unsaved');
+    isUnsaved = false;
+    updateStats();
+    if (editMode) {
+      renderActionButtonsEdit();
+    }
+  } else {
+    document.getElementById('editorContent').innerHTML = '';
+    savedContent = '';
+    renderActionButtonsEdit();
+  }
+
+  LSClip.updateCharCount();
+  setupAutoSave();
+  setupKeyboardShortcuts();
+  setupToolbar();
+  setupEditorContentEvents();
+}
+
+function updateStats() {
+  if (!clipData) return;
+  const stats = document.getElementById('clipStats');
+  const typeMap = { text: 'Text', note: 'Note', code: 'Code', link: 'Link' };
+  const modeMap = { full_public: 'Full Public', readonly_public: 'Read-only', private: 'Private' };
+  const expiryMap = { single_view: 'Single View', '15d': '15d', '1m': '1m', '3m': '3m', '6m': '6m' };
+
+  let html = '';
+  html += '<span class="badge accent">' + (typeMap[clipData.clip_type] || clipData.clip_type) + '</span>';
+  html += '<span class="badge">' + (modeMap[clipData.access_mode] || clipData.access_mode) + '</span>';
+  html += '<span class="badge">&#128064; ' + (clipData.visit_count || 0) + ' views</span>';
+  html += '<span class="badge">&#128259; ' + (expiryMap[clipData.expiry_mode] || clipData.expiry_mode) + '</span>';
+  stats.innerHTML = html;
+
+  if (clipData.clip_type) {
+    const pills = document.getElementById('clipTypePills');
+    if (pills) {
+      pills.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.mode === clipData.clip_type));
+    }
+  }
+  if (clipData.access_mode) {
+    selectAccessModeByValue(clipData.access_mode);
+  }
+  if (clipData.expiry_mode) {
+    const pills = document.getElementById('expiryPills');
+    if (pills) {
+      pills.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.mode === clipData.expiry_mode));
+    }
+  }
+  if (clipData.syntax_language) {
+    document.getElementById('syntaxLang').value = clipData.syntax_language;
+  }
+
+  if (clipData.access_mode === 'full_public') {
+    document.getElementById('passwordFields').classList.add('hidden');
+  } else {
+    document.getElementById('passwordFields').classList.remove('hidden');
+  }
+
+  if (clipData.file) {
+    showFileInfo(clipData.file);
+  }
+}
+
+function renderActionButtonsEdit() {
+  const bar = document.getElementById('actionBar');
+  bar.innerHTML = '';
+  bar.innerHTML = `
+    <button class="btn btn-ghost btn-sm" id="saveBtn" onclick="saveClip()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
+      <span id="saveBtnText">Save</span>
+    </button>
+    <button class="btn btn-ghost btn-sm" onclick="copyContent()">&#128203; Copy</button>
+    <button class="btn btn-ghost btn-sm" onclick="copyUrl()">&#128279; Share</button>
+    <button class="btn btn-ghost btn-sm" onclick="showQR()">&#9633; QR</button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleSettings()">&#9881; Settings</button>
+    <button class="btn btn-danger btn-sm" onclick="LSClip.openModal('deleteModal')">&#128465; Delete</button>
+  `;
+}
+
+function renderActionButtonsReadonly() {
+  const bar = document.getElementById('actionBar');
+  bar.innerHTML = '';
+  bar.innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="copyContent()">&#128203; Copy</button>
+    <button class="btn btn-ghost btn-sm" onclick="copyUrl()">&#128279; Share</button>
+    <button class="btn btn-ghost btn-sm" onclick="showQR()">&#9633; QR</button>
+    <button class="btn btn-primary btn-sm" onclick="LSClip.openModal('passwordModal')">&#128275; Unlock to Edit</button>
+  `;
+}
+
+function toggleSettings() {
+  const panel = document.getElementById('settingsPanel');
+  const chevron = document.getElementById('settingsChevron');
+  panel.classList.toggle('hidden');
+  chevron.classList.toggle('open');
+}
+
+function selectPill(groupId, el) {
+  LSClip.selectPill(groupId, el);
+  markUnsaved();
+}
+
+function selectAccessMode(el) {
+  LSClip.selectPill('accessModePills', el);
+  LSClip.togglePasswordFields();
+  markUnsaved();
+}
+
+function selectAccessModeByValue(mode) {
+  const pills = document.getElementById('accessModePills');
+  if (pills) {
+    pills.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.mode === mode));
+  }
+  LSClip.togglePasswordFields();
+}
+
+function markUnsaved() {
+  const editor = document.getElementById('editorContent');
+  const currentContent = editor.innerHTML;
+  if (currentContent !== savedContent) {
+    isUnsaved = true;
+    document.getElementById('editorWrap').classList.add('unsaved');
+  } else {
+    isUnsaved = false;
+    document.getElementById('editorWrap').classList.remove('unsaved');
+  }
+  const btnText = document.getElementById('saveBtnText');
+  if (btnText) {
+    btnText.textContent = isUnsaved ? 'Save' : 'Saved';
+  }
+  const saveBtn = document.getElementById('saveBtn');
+  if (saveBtn) saveBtn.disabled = !isUnsaved;
+}
+
+async function saveClip() {
+  const content = document.getElementById('editorContent').innerHTML;
+  const accessMode = document.querySelector('#accessModePills .pill.active')?.dataset.mode || 'full_public';
+  const expiryMode = document.querySelector('#expiryPills .pill.active')?.dataset.mode || '15d';
+  const clipType = document.querySelector('#clipTypePills .pill.active')?.dataset.mode || 'note';
+  const syntaxLang = document.getElementById('syntaxLang').value;
+  const pw1 = document.getElementById('pw1')?.value;
+  const pw2 = document.getElementById('pw2')?.value;
+
+  if (accessMode !== 'full_public') {
+    if (!pw1) { LSClip.toast('Password required for ' + (accessMode === 'readonly_public' ? 'Read-only' : 'Private') + ' mode', 'error'); return; }
+    if (pw1 !== pw2) { LSClip.toast('Passwords do not match', 'error'); return; }
+  }
+
+  const body = {
+    content,
+    clip_type: clipType,
+    access_mode: accessMode,
+    expiry_mode: expiryMode,
+    syntax_language: syntaxLang || null
+  };
+  if (accessMode !== 'full_public') body.password = pw1;
+
+  const url = '/api/clips/' + encodeURIComponent(SLUG);
+  const method = clipData ? 'PUT' : 'POST';
+  if (clipData) {
+    const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+    if (storedPw) body.password = storedPw;
+  }
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span> Saving&hellip;';
+
+  try {
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.ok) {
+      clipData = await r.json();
+      savedContent = content;
+      isUnsaved = false;
+      document.getElementById('editorWrap').classList.remove('unsaved');
+      LSClip.toast('Saved', 'success');
+      renderActionButtonsEdit();
+      updateStats();
+    } else {
+      const err = await r.json();
+      LSClip.toast(err.error || 'Save failed', 'error');
+    }
+  } catch {
+    LSClip.toast('Network error', 'error');
+  }
+}
+
+async function deleteClip() {
+  const pw = sessionStorage.getItem('lsclip-pw-' + SLUG) || undefined;
+  const headers = { 'Content-Type': 'application/json' };
+  const body = pw ? { password: pw } : {};
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
+      method: 'DELETE',
+      headers,
+      body: Object.keys(body).length ? JSON.stringify(body) : undefined
+    });
+    if (r.ok) {
+      LSClip.toast('Clip deleted', 'error');
+      setTimeout(() => window.location.href = '/', 1500);
+    } else {
+      const err = await r.json();
+      LSClip.toast(err.error || 'Delete failed', 'error');
+    }
+  } catch {
+    LSClip.toast('Network error', 'error');
+  }
+}
+
+function copyContent() {
+  const text = document.getElementById('editorContent').innerText;
+  LSClip.copyToClipboard(text).then(ok => {
+    LSClip.toast(ok ? 'Content copied!' : 'Copy failed', ok ? 'success' : 'error');
+  });
+}
+
+function copyUrl() {
+  LSClip.copyToClipboard(BASE_URL + '/' + SLUG).then(ok => {
+    LSClip.toast(ok ? 'URL copied!' : 'Copy failed', ok ? 'success' : 'error');
+  });
+}
+
+async function showQR() {
+  LSClip.openModal('qrModal');
+  document.getElementById('qrUrl').textContent = BASE_URL + '/' + SLUG;
+  try {
+    if (typeof QRCode !== 'undefined') {
+      const container = document.getElementById('qrCodeContainer');
+      container.innerHTML = '';
+      new QRCode(container, { text: BASE_URL + '/' + SLUG, width: 180, height: 180 });
+    } else {
+      document.getElementById('qrCodeContainer').innerHTML = '<span>QR Code</span>';
+    }
+  } catch {
+    document.getElementById('qrCodeContainer').innerHTML = '<span>QR unavailable</span>';
+  }
+}
+
+function setupAutoSave() {
+  const editor = document.getElementById('editorContent');
+  editor.addEventListener('input', () => {
+    LSClip.updateCharCount();
+    markUnsaved();
+    clearTimeout(autoSaveTimer);
+    if (isUnsaved && clipData) {
+      autoSaveTimer = setTimeout(silentSave, 1500);
+    }
+  });
+}
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      if (isUnsaved && editMode) saveClip();
+    }
+  });
+}
+
+async function silentSave() {
+  if (!isUnsaved || !editMode) return;
+  const content = document.getElementById('editorContent').innerHTML;
+  const body = { content };
+  const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+  if (storedPw) body.password = storedPw;
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (r.ok) {
+      clipData = await r.json();
+      savedContent = content;
+      isUnsaved = false;
+      document.getElementById('editorWrap').classList.remove('unsaved');
+      const btnText = document.getElementById('saveBtnText');
+      if (btnText) btnText.textContent = 'Saved';
+      const saveBtn = document.getElementById('saveBtn');
+      if (saveBtn) saveBtn.disabled = true;
+    }
+  } catch {}
+}
+
+function setupToolbar() {
+  document.querySelectorAll('#toolbar .toolbar-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      if (!action) return;
+      document.execCommand(action, false, null);
+      document.getElementById('editorContent').focus();
+    });
+  });
+}
+
+function setupEditorContentEvents() {
+  const editor = document.getElementById('editorContent');
+  editor.addEventListener('input', () => LSClip.updateCharCount());
+  LSClip.updateCharCount();
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) {
+    LSClip.toast('File must be under 20 MB', 'error');
+    return;
+  }
+  const formData = new FormData();
+  formData.append('file', file);
+  const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+  const headers = {};
+  if (storedPw) headers['X-Password'] = storedPw;
+
+  fetch('/api/clips/' + encodeURIComponent(SLUG) + '/file', { method: 'POST', body: formData, headers })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        LSClip.toast('File uploaded!', 'success');
+        if (data.file) showFileInfo(data.file);
+      } else {
+        LSClip.toast(data.error || 'Upload failed', 'error');
+      }
+    })
+    .catch(() => LSClip.toast('Upload failed', 'error'));
+}
+
+function showFileInfo(file) {
+  document.getElementById('fileUploadField').classList.add('hidden');
+  const row = document.getElementById('fileInfoRow');
+  row.classList.remove('hidden');
+  document.getElementById('fileName').textContent = file.original_name;
+  document.getElementById('fileSize').textContent = formatSize(file.file_size);
+  document.getElementById('fileMeta').textContent = '\u2193 ' + (file.download_count || 0) + ' downloads \u00b7 expires ' + formatDate(file.file_expires_at);
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatDate(dateStr) {
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+async function deleteFile() {
+  const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+  const headers = {};
+  if (storedPw) headers['X-Password'] = storedPw;
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG) + '/file', {
+      method: 'DELETE',
+      headers
+    });
+    const data = await r.json();
+    if (data.ok) {
+      LSClip.toast('File deleted', 'error');
+      document.getElementById('fileInfoRow').classList.add('hidden');
+      document.getElementById('fileUploadField').classList.remove('hidden');
+    } else {
+      LSClip.toast(data.error || 'Delete failed', 'error');
+    }
+  } catch {
+    LSClip.toast('Network error', 'error');
+  }
+}
+
+loadClip();
+</script>
 </body>
 </html>

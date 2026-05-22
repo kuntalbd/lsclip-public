@@ -83,13 +83,21 @@ async function start() {
   app.use('/api', clipRoutes(db));
   app.use('/api', fileRoutes(db));
 
+  app.get('/', (req, res) => {
+    res.render('index', { BASE_URL, TURNSTILE_SITE_KEY });
+  });
+
+  app.get('/help', (req, res) => {
+    res.render('help', { BASE_URL, TURNSTILE_SITE_KEY });
+  });
+
+  app.get('/about', (req, res) => {
+    res.render('about', { BASE_URL, TURNSTILE_SITE_KEY });
+  });
+
   app.get('/:slug', (req, res) => {
     const slug = req.params.slug.toLowerCase();
     res.render('clip', { slug, BASE_URL, TURNSTILE_SITE_KEY });
-  });
-
-  app.get('/', (req, res) => {
-    res.render('index', { BASE_URL, TURNSTILE_SITE_KEY });
   });
 
   app.use((req, res) => {

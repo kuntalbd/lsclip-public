@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Help &amp; Guide — LS Clip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-theme="white">
+<div class="app">
+
+<header>
+  <a class="logo" href="/">
+    <div class="logo-mark">&#8249;LS&#8250;</div>
+    <div>
+      <div class="brand-title">Clip</div>
+      <div class="brand-sub">Logic Shift</div>
+    </div>
+  </a>
+  <div class="header-right">
+    <a class="nav-link" href="/help">Help</a>
+    <a class="nav-link" href="/about">About</a>
+    <div class="theme-toggle">
+      <button class="theme-btn active" data-theme="white" onclick="LSClip.setTheme('white')">White</button>
+      <button class="theme-btn" data-theme="dark" onclick="LSClip.setTheme('dark')">Dark</button>
+      <button class="theme-btn" data-theme="paper" onclick="LSClip.setTheme('paper')">Paper</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="content-page fade-in">
+    <h2>Help &amp; Guide</h2>
+
+    <h3>What is LS Clip?</h3>
+    <p>A minimal, professional clipboard and snippet sharing app. Create a clip, get a short URL, share it. No account needed. Just pick a slug, type your content, and share the link.</p>
+
+    <h3>Access Modes</h3>
+    <ul>
+      <li><b>Full Public</b> &mdash; anyone with the link can view and edit. No password required.</li>
+      <li><b>Read-only Public</b> &mdash; anyone can view the content, but a password is required to edit or delete it.</li>
+      <li><b>Private</b> &mdash; password is required for everything. Without the password, nobody can even see the content.</li>
+    </ul>
+
+    <h3>Rolling Expiry</h3>
+    <p>Every time a clip is properly accessed, its deletion timer resets. For example, a 15-day clip visited on day 10 gets a new expiry of day 25.</p>
+    <p><b>Single View</b> clips are deleted immediately after the first access. For password-protected clips, the rolling expiry only resets after entering the correct password &mdash; not on a bare URL hit.</p>
+
+    <h3>Expiry Options</h3>
+    <ul>
+      <li><b>Single View</b> &mdash; deleted after first access.</li>
+      <li><b>15 days</b> &mdash; rolling, resets on each valid visit.</li>
+      <li><b>1 month</b> &mdash; rolling, resets on each valid visit.</li>
+      <li><b>3 months</b> &mdash; rolling, resets on each valid visit.</li>
+      <li><b>6 months</b> &mdash; rolling, resets on each valid visit.</li>
+    </ul>
+
+    <h3>File Attachments</h3>
+    <p>One file per clip, maximum 20 MB. Files have a fixed 3-day expiry from the time of upload &mdash; this never extends, even with rolling clip expiry. You must delete the existing file before uploading a new one.</p>
+
+    <h3>Passwords</h3>
+    <p>Passwords are hashed with bcrypt (12 rounds). There is no recovery mechanism &mdash; if you lose the password, the clip remains locked until it expires.</p>
+
+    <h3>Clip Types</h3>
+    <ul>
+      <li><b>Text</b> &mdash; plain text content.</li>
+      <li><b>Note</b> &mdash; rich text with formatting (default).</li>
+      <li><b>Code</b> &mdash; code snippet with optional syntax highlighting language.</li>
+      <li><b>Link</b> &mdash; a shared URL or reference.</li>
+    </ul>
+
+    <h3>Keyboard Shortcuts</h3>
+    <ul>
+      <li><b>Ctrl+S / Cmd+S</b> &mdash; Save clip</li>
+    </ul>
+
+    <h3>Privacy</h3>
+    <p>No accounts, no tracking beyond basic access logs (IP, user-agent, timestamp) used for clip management and visit counters. All logs are deleted when the parent clip expires.</p>
+
+    <h3>Self-Hosting</h3>
+    <p>LS Clip is designed to be self-hosted. You can run it with Docker or directly with Node.js. See the README for setup instructions.</p>
+  </div>
+</main>
+
+<footer>
+  <span>Self-hosted &middot; Minimal &middot; Open Source</span>
+  <span></span>
+</footer>
+
+</div>
+
+<div id="toasts"></div>
+<script src="/js/app.js"></script>
+<script>LSClip.init({ BASE_URL: '<%= BASE_URL %>' });</script>
+</body>
+</html>
