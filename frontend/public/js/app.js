@@ -83,13 +83,22 @@ window.LSClip = {
     }
   },
   updateCharCount() {
-    const editor = document.getElementById('editorContent');
     const counter = document.getElementById('charWordCount');
-    if (!editor || !counter) return;
-    const text = editor.innerText || '';
-    const chars = text.length;
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    counter.textContent = chars + ' chars \u00b7 ' + words + ' words';
+    if (!counter) return;
+    const tip = window.tiptapEditor;
+    if (tip && tip.getText) {
+      const text = tip.getText() || '';
+      const chars = text.length;
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      counter.textContent = chars + ' chars \u00b7 ' + words + ' words';
+    } else {
+      const el = document.getElementById('editorContent');
+      if (!el) return;
+      const text = el.innerText || '';
+      const chars = text.length;
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      counter.textContent = chars + ' chars \u00b7 ' + words + ' words';
+    }
   }
 };
 

@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body data-theme="white">
 <div class="app">
@@ -70,17 +71,24 @@
   <!-- Editor Wrap -->
   <div class="editor-wrap" id="editorWrap">
     <div class="toolbar" id="toolbar">
-      <button class="toolbar-btn" data-action="bold" title="Bold"><b>B</b></button>
-      <button class="toolbar-btn" data-action="italic" title="Italic"><i>I</i></button>
-      <button class="toolbar-btn" data-action="underline" title="Underline"><u>U</u></button>
+      <button class="toolbar-btn" data-tiptap="bold" title="Bold"><b>B</b></button>
+      <button class="toolbar-btn" data-tiptap="italic" title="Italic"><i>I</i></button>
+      <button class="toolbar-btn" data-tiptap="underline" title="Underline"><u>U</u></button>
       <span class="toolbar-sep"></span>
-      <button class="toolbar-btn" data-action="bulletList" title="Bullet List">&bull; List</button>
+      <button class="toolbar-btn" data-tiptap="bulletList" title="Bullet List">&bull; List</button>
       <span class="toolbar-sep"></span>
-      <button class="toolbar-btn" data-action="link" title="Hyperlink">&#128279;</button>
+      <button class="toolbar-btn" data-tiptap="link" title="Hyperlink">&#128279;</button>
       <span class="toolbar-sep"></span>
-      <button class="toolbar-btn" data-action="codeBlock" title="Code Block">&lt;/&gt;</button>
+      <div class="color-wrapper">
+        <button class="toolbar-btn" title="Font Color">
+          <span style="display:flex;align-items:center;gap:4px;">
+            <span class="color-swatch"></span>A
+          </span>
+        </button>
+        <input type="color" id="colorPicker" value="#000000">
+      </div>
     </div>
-    <div class="editor-content" id="editorContent" contenteditable="true"></div>
+    <div class="editor-content" id="editorContent"></div>
     <div class="editor-footer">
       <span class="count-display" id="charWordCount">0 chars &middot; 0 words</span>
       <div class="action-bar" id="actionBar"></div>
@@ -236,7 +244,14 @@
 <div id="toasts"></div>
 
 <script src="/js/app.js"></script>
-<script>
+<script type="module">
+import { Editor } from 'https://esm.sh/@tiptap/core@2.11.5';
+import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.11.5';
+import Underline from 'https://esm.sh/@tiptap/extension-underline@2.11.5';
+import Link from 'https://esm.sh/@tiptap/extension-link@2.11.5';
+import TextStyle from 'https://esm.sh/@tiptap/extension-text-style@2.11.5';
+import Color from 'https://esm.sh/@tiptap/extension-color@2.11.5';
+
 const SLUG = '<%= slug %>';
 const BASE_URL = '<%= BASE_URL %>';
 let clipData = null;
@@ -244,84 +259,120 @@ let editMode = false;
 let savedContent = '';
 let autoSaveTimer = null;
 let isUnsaved = false;
+let editor = null;
 
 LSClip.init({ BASE_URL });
+
+function initEditor(content) {
+  if (editor) { editor.destroy(); editor = null; }
+  editor = new Editor({
+    element: document.getElementById('editorContent'),
+    extensions: [
+      StarterKit.configure({
+        heading: false, codeBlock: false, blockquote: false,
+        horizontalRule: false, orderedList: false, strike: false,
+        code: false, hardBreak: false,
+      }),
+      Underline,
+      Link.configure({ openOnClick: false }),
+      TextStyle,
+      Color,
+    ],
+    content: content || '',
+    editable: editMode,
+    onUpdate() {
+      LSClip.updateCharCount();
+      if (editor) markUnsaved();
+      clearTimeout(autoSaveTimer);
+      if (isUnsaved && clipData && editMode) {
+        autoSaveTimer = setTimeout(silentSave, 1500);
+      }
+    },
+    onSelectionUpdate() {
+      updateToolbarState();
+    },
+  });
+  window.tiptapEditor = editor;
+  savedContent = editor.getHTML();
+  isUnsaved = false;
+  document.getElementById('editorWrap').classList.remove('unsaved');
+  LSClip.updateCharCount();
+}
+
+function updateToolbarState() {
+  if (!editor) return;
+  document.querySelectorAll('.toolbar-btn[data-tiptap]').forEach(btn => {
+    const a = btn.dataset.tiptap;
+    btn.classList.toggle('active', editor.isActive(a));
+  });
+}
+
+function setupToolbar() {
+  document.querySelectorAll('.toolbar-btn[data-tiptap]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!editor || !editMode) return;
+      const a = btn.dataset.tiptap;
+      switch (a) {
+        case 'bold': editor.chain().focus().toggleBold().run(); break;
+        case 'italic': editor.chain().focus().toggleItalic().run(); break;
+        case 'underline': editor.chain().focus().toggleUnderline().run(); break;
+        case 'bulletList': editor.chain().focus().toggleBulletList().run(); break;
+        case 'link': {
+          const prev = editor.getAttributes('link').href || '';
+          const url = window.prompt('Link URL:', prev);
+          if (url === null) return;
+          if (url === '') editor.chain().focus().extendMarkRange('link').unsetLink().run();
+          else editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+          break;
+        }
+      }
+      editor.commands.focus();
+    });
+  });
+  const cp = document.getElementById('colorPicker');
+  if (cp) {
+    cp.addEventListener('input', e => {
+      if (!editor || !editMode) return;
+      editor.chain().focus().setColor(e.target.value).run();
+    });
+  }
+}
 
 async function loadClip() {
   try {
     const r = await fetch('/api/clips/' + encodeURIComponent(SLUG));
     if (!r.ok) {
-      if (r.status === 404) {
-        clipData = null;
-        editMode = true;
-        showEditor(true);
-      } else {
-        LSClip.toast('Error loading clip', 'error');
-      }
+      if (r.status === 404) { clipData = null; editMode = true; showEditor(true); }
+      else LSClip.toast('Error loading clip', 'error');
       return;
     }
     const pw = sessionStorage.getItem('lsclip-pw-' + SLUG);
     clipData = await r.json();
-
     if (clipData.access_mode === 'private') {
-      if (pw) {
-        tryUnlockWithPassword(pw);
-      } else {
-        showLockScreen();
-      }
+      if (pw) tryUnlockWithPassword(pw); else showLockScreen();
     } else if (clipData.access_mode === 'readonly_public') {
-      if (pw) {
-        tryUnlockReadonly(pw);
-      } else {
-        showReadonlyView();
-      }
+      if (pw) tryUnlockReadonly(pw); else showReadonlyView();
     } else {
       editMode = true;
       showEditor(false);
     }
-  } catch {
-    LSClip.toast('Network error', 'error');
-  }
+  } catch { LSClip.toast('Network error', 'error'); }
 }
 
 async function tryUnlockWithPassword(pw) {
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw })
-    });
-    if (r.ok) {
-      sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
-      clipData = await r.json();
-      editMode = true;
-      showEditor(false);
-    } else {
-      showLockScreen();
-    }
-  } catch {
-    showLockScreen();
-  }
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+    if (r.ok) { sessionStorage.setItem('lsclip-pw-' + SLUG, pw); clipData = await r.json(); editMode = true; showEditor(false); }
+    else showLockScreen();
+  } catch { showLockScreen(); }
 }
 
 async function tryUnlockReadonly(pw) {
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw })
-    });
-    if (r.ok) {
-      sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
-      clipData = await r.json();
-      editMode = true;
-      showEditor(false);
-    } else {
-      showReadonlyView();
-    }
-  } catch {
-    showReadonlyView();
-  }
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+    if (r.ok) { sessionStorage.setItem('lsclip-pw-' + SLUG, pw); clipData = await r.json(); editMode = true; showEditor(false); }
+    else showReadonlyView();
+  } catch { showReadonlyView(); }
 }
 
 function showLockScreen() {
@@ -336,35 +387,23 @@ async function unlockPrivate() {
   btn.disabled = true;
   btn.innerHTML = '<span class="loading-spinner"></span> Unlocking&hellip;';
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw })
-    });
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
     if (r.ok) {
       sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
       clipData = await r.json();
       editMode = true;
       showEditor(false);
-    } else {
-      document.getElementById('lockError').classList.remove('hidden');
-    }
-  } catch {
-    LSClip.toast('Network error', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 11V7a4 4 0 0 1 8 0v4M5 11h14l1 10H4z"/></svg> Unlock';
-  }
+    } else { document.getElementById('lockError').classList.remove('hidden'); }
+  } catch { LSClip.toast('Network error', 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 11V7a4 4 0 0 1 8 0v4M5 11h14l1 10H4z"/></svg> Unlock'; }
 }
 
 function showReadonlyView() {
   document.getElementById('editorWrap').classList.add('readonly');
-  showEditor(false);
-  const editor = document.getElementById('editorContent');
-  editor.contentEditable = 'false';
-  editor.style.cursor = 'default';
-  editor.style.background = 'var(--bg)';
   document.getElementById('toolbar').classList.add('hidden');
+  editMode = false;
+  showEditor(false);
+  if (editor) editor.setEditable(false);
   renderActionButtonsReadonly();
 }
 
@@ -372,56 +411,37 @@ async function unlockReadonly() {
   const pw = document.getElementById('modalPassword').value;
   if (!pw) return;
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw })
-    });
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
     if (r.ok) {
       sessionStorage.setItem('lsclip-pw-' + SLUG, pw);
       clipData = await r.json();
       editMode = true;
       LSClip.closeModal('passwordModal');
       showEditor(false);
-      const editor = document.getElementById('editorContent');
-      editor.contentEditable = 'true';
-      editor.style.cursor = '';
-      editor.style.background = '';
+      if (editor) editor.setEditable(true);
       document.getElementById('toolbar').classList.remove('hidden');
       renderActionButtonsEdit();
-    } else {
-      document.getElementById('modalPwError').classList.remove('hidden');
-    }
-  } catch {
-    LSClip.toast('Network error', 'error');
-  }
+    } else { document.getElementById('modalPwError').classList.remove('hidden'); }
+  } catch { LSClip.toast('Network error', 'error'); }
 }
 
 function showEditor(isNew) {
   document.getElementById('lockScreen').classList.add('hidden');
   document.getElementById('clipEditor').classList.remove('hidden');
-
-  if (clipData) {
-    const editor = document.getElementById('editorContent');
-    editor.innerHTML = clipData.content || '';
-    savedContent = clipData.content || '';
-    document.getElementById('editorWrap').classList.remove('unsaved');
-    isUnsaved = false;
-    updateStats();
-    if (editMode) {
-      renderActionButtonsEdit();
-    }
+  const content = clipData ? (clipData.content || '') : '';
+  initEditor(content);
+  if (!editMode) {
+    if (editor) editor.setEditable(false);
+    document.getElementById('toolbar').classList.add('hidden');
+    renderActionButtonsReadonly();
   } else {
-    document.getElementById('editorContent').innerHTML = '';
-    savedContent = '';
+    if (editor) editor.setEditable(true);
+    document.getElementById('toolbar').classList.remove('hidden');
     renderActionButtonsEdit();
+    if (clipData) updateStats();
   }
-
-  LSClip.updateCharCount();
-  setupAutoSave();
   setupKeyboardShortcuts();
   setupToolbar();
-  setupEditorContentEvents();
 }
 
 function updateStats() {
@@ -430,70 +450,57 @@ function updateStats() {
   const typeMap = { text: 'Text', note: 'Note', code: 'Code', link: 'Link' };
   const modeMap = { full_public: 'Full Public', readonly_public: 'Read-only', private: 'Private' };
   const expiryMap = { single_view: 'Single View', '15d': '15d', '1m': '1m', '3m': '3m', '6m': '6m' };
-
   let html = '';
   html += '<span class="badge accent">' + (typeMap[clipData.clip_type] || clipData.clip_type) + '</span>';
   html += '<span class="badge">' + (modeMap[clipData.access_mode] || clipData.access_mode) + '</span>';
   html += '<span class="badge">&#128064; ' + (clipData.visit_count || 0) + ' views</span>';
   html += '<span class="badge">&#128259; ' + (expiryMap[clipData.expiry_mode] || clipData.expiry_mode) + '</span>';
   stats.innerHTML = html;
-
   if (clipData.clip_type) {
-    const pills = document.getElementById('clipTypePills');
-    if (pills) {
-      pills.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.mode === clipData.clip_type));
-    }
+    const p = document.getElementById('clipTypePills');
+    if (p) p.querySelectorAll('.pill').forEach(x => x.classList.toggle('active', x.dataset.mode === clipData.clip_type));
   }
-  if (clipData.access_mode) {
-    selectAccessModeByValue(clipData.access_mode);
-  }
+  if (clipData.access_mode) selectAccessModeByValue(clipData.access_mode);
   if (clipData.expiry_mode) {
-    const pills = document.getElementById('expiryPills');
-    if (pills) {
-      pills.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.mode === clipData.expiry_mode));
-    }
+    const p = document.getElementById('expiryPills');
+    if (p) p.querySelectorAll('.pill').forEach(x => x.classList.toggle('active', x.dataset.mode === clipData.expiry_mode));
   }
-  if (clipData.syntax_language) {
-    document.getElementById('syntaxLang').value = clipData.syntax_language;
-  }
-
-  if (clipData.access_mode === 'full_public') {
-    document.getElementById('passwordFields').classList.add('hidden');
-  } else {
-    document.getElementById('passwordFields').classList.remove('hidden');
-  }
-
-  if (clipData.file) {
-    showFileInfo(clipData.file);
-  }
+  if (clipData.syntax_language) document.getElementById('syntaxLang').value = clipData.syntax_language;
+  if (clipData.access_mode === 'full_public') document.getElementById('passwordFields').classList.add('hidden');
+  else document.getElementById('passwordFields').classList.remove('hidden');
+  if (clipData.file) showFileInfo(clipData.file);
 }
 
 function renderActionButtonsEdit() {
-  const bar = document.getElementById('actionBar');
-  bar.innerHTML = '';
-  bar.innerHTML = `
-    <button class="btn btn-ghost btn-sm" id="saveBtn" onclick="saveClip()">
+  document.getElementById('actionBar').innerHTML = `
+    <button class="btn btn-ghost btn-sm" id="saveBtn" onclick="window._clipSave()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
       <span id="saveBtnText">Save</span>
     </button>
-    <button class="btn btn-ghost btn-sm" onclick="copyContent()">&#128203; Copy</button>
-    <button class="btn btn-ghost btn-sm" onclick="copyUrl()">&#128279; Share</button>
-    <button class="btn btn-ghost btn-sm" onclick="showQR()">&#9633; QR</button>
-    <button class="btn btn-ghost btn-sm" onclick="toggleSettings()">&#9881; Settings</button>
-    <button class="btn btn-danger btn-sm" onclick="LSClip.openModal('deleteModal')">&#128465; Delete</button>
+    <button class="btn btn-ghost btn-sm" onclick="window._clipCopy()">&#128203; Copy</button>
+    <button class="btn btn-ghost btn-sm" onclick="window._clipShare()">&#128279; Share</button>
+    <button class="btn btn-ghost btn-sm" onclick="window._clipQR()">&#9633; QR</button>
+    <button class="btn btn-ghost btn-sm" onclick="window._clipSettings()">&#9881; Settings</button>
+    <button class="btn btn-danger btn-sm" onclick="window._clipDelete()">&#128465; Delete</button>
   `;
 }
 
 function renderActionButtonsReadonly() {
-  const bar = document.getElementById('actionBar');
-  bar.innerHTML = '';
-  bar.innerHTML = `
-    <button class="btn btn-ghost btn-sm" onclick="copyContent()">&#128203; Copy</button>
-    <button class="btn btn-ghost btn-sm" onclick="copyUrl()">&#128279; Share</button>
-    <button class="btn btn-ghost btn-sm" onclick="showQR()">&#9633; QR</button>
-    <button class="btn btn-primary btn-sm" onclick="LSClip.openModal('passwordModal')">&#128275; Unlock to Edit</button>
+  document.getElementById('actionBar').innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="window._clipCopy()">&#128203; Copy</button>
+    <button class="btn btn-ghost btn-sm" onclick="window._clipShare()">&#128279; Share</button>
+    <button class="btn btn-ghost btn-sm" onclick="window._clipQR()">&#9633; QR</button>
+    <button class="btn btn-primary btn-sm" onclick="window._clipUnlock()">&#128275; Unlock to Edit</button>
   `;
 }
+
+window._clipSave = saveClip;
+window._clipCopy = copyContent;
+window._clipShare = copyUrl;
+window._clipQR = showQR;
+window._clipSettings = toggleSettings;
+window._clipDelete = () => LSClip.openModal('deleteModal');
+window._clipUnlock = () => LSClip.openModal('passwordModal');
 
 function toggleSettings() {
   const panel = document.getElementById('settingsPanel');
@@ -514,17 +521,15 @@ function selectAccessMode(el) {
 }
 
 function selectAccessModeByValue(mode) {
-  const pills = document.getElementById('accessModePills');
-  if (pills) {
-    pills.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.mode === mode));
-  }
+  const p = document.getElementById('accessModePills');
+  if (p) p.querySelectorAll('.pill').forEach(x => x.classList.toggle('active', x.dataset.mode === mode));
   LSClip.togglePasswordFields();
 }
 
 function markUnsaved() {
-  const editor = document.getElementById('editorContent');
-  const currentContent = editor.innerHTML;
-  if (currentContent !== savedContent) {
+  if (!editor) return;
+  const cur = editor.getHTML();
+  if (cur !== savedContent) {
     isUnsaved = true;
     document.getElementById('editorWrap').classList.add('unsaved');
   } else {
@@ -532,47 +537,32 @@ function markUnsaved() {
     document.getElementById('editorWrap').classList.remove('unsaved');
   }
   const btnText = document.getElementById('saveBtnText');
-  if (btnText) {
-    btnText.textContent = isUnsaved ? 'Save' : 'Saved';
-  }
+  if (btnText) btnText.textContent = isUnsaved ? 'Save' : 'Saved';
   const saveBtn = document.getElementById('saveBtn');
   if (saveBtn) saveBtn.disabled = !isUnsaved;
 }
 
 async function saveClip() {
-  const content = document.getElementById('editorContent').innerHTML;
+  if (!editor) return;
+  const content = editor.getHTML();
   const accessMode = document.querySelector('#accessModePills .pill.active')?.dataset.mode || 'full_public';
   const expiryMode = document.querySelector('#expiryPills .pill.active')?.dataset.mode || '15d';
   const clipType = document.querySelector('#clipTypePills .pill.active')?.dataset.mode || 'note';
   const syntaxLang = document.getElementById('syntaxLang').value;
   const pw1 = document.getElementById('pw1')?.value;
   const pw2 = document.getElementById('pw2')?.value;
-
   if (accessMode !== 'full_public') {
     if (!pw1) { LSClip.toast('Password required for ' + (accessMode === 'readonly_public' ? 'Read-only' : 'Private') + ' mode', 'error'); return; }
     if (pw1 !== pw2) { LSClip.toast('Passwords do not match', 'error'); return; }
   }
-
-  const body = {
-    content,
-    clip_type: clipType,
-    access_mode: accessMode,
-    expiry_mode: expiryMode,
-    syntax_language: syntaxLang || null
-  };
+  const body = { content, clip_type: clipType, access_mode: accessMode, expiry_mode: expiryMode, syntax_language: syntaxLang || null };
   if (accessMode !== 'full_public') body.password = pw1;
-
   const url = '/api/clips/' + encodeURIComponent(SLUG);
   const method = clipData ? 'PUT' : 'POST';
-  if (clipData) {
-    const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
-    if (storedPw) body.password = storedPw;
-  }
-
+  if (clipData) { const spw = sessionStorage.getItem('lsclip-pw-' + SLUG); if (spw) body.password = spw; }
   const btn = document.getElementById('saveBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="loading-spinner"></span> Saving&hellip;';
-
   try {
     const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (r.ok) {
@@ -583,48 +573,28 @@ async function saveClip() {
       LSClip.toast('Saved', 'success');
       renderActionButtonsEdit();
       updateStats();
-    } else {
-      const err = await r.json();
-      LSClip.toast(err.error || 'Save failed', 'error');
-    }
-  } catch {
-    LSClip.toast('Network error', 'error');
-  }
+    } else { const err = await r.json(); LSClip.toast(err.error || 'Save failed', 'error'); }
+  } catch { LSClip.toast('Network error', 'error'); }
 }
 
 async function deleteClip() {
   const pw = sessionStorage.getItem('lsclip-pw-' + SLUG) || undefined;
-  const headers = { 'Content-Type': 'application/json' };
+  const h = { 'Content-Type': 'application/json' };
   const body = pw ? { password: pw } : {};
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
-      method: 'DELETE',
-      headers,
-      body: Object.keys(body).length ? JSON.stringify(body) : undefined
-    });
-    if (r.ok) {
-      LSClip.toast('Clip deleted', 'error');
-      setTimeout(() => window.location.href = '/', 1500);
-    } else {
-      const err = await r.json();
-      LSClip.toast(err.error || 'Delete failed', 'error');
-    }
-  } catch {
-    LSClip.toast('Network error', 'error');
-  }
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), { method: 'DELETE', headers: h, body: Object.keys(body).length ? JSON.stringify(body) : undefined });
+    if (r.ok) { LSClip.toast('Clip deleted', 'error'); setTimeout(() => window.location.href = '/', 1500); }
+    else { const err = await r.json(); LSClip.toast(err.error || 'Delete failed', 'error'); }
+  } catch { LSClip.toast('Network error', 'error'); }
 }
 
 function copyContent() {
-  const text = document.getElementById('editorContent').innerText;
-  LSClip.copyToClipboard(text).then(ok => {
-    LSClip.toast(ok ? 'Content copied!' : 'Copy failed', ok ? 'success' : 'error');
-  });
+  const text = editor ? editor.getText() : '';
+  LSClip.copyToClipboard(text).then(ok => LSClip.toast(ok ? 'Content copied!' : 'Copy failed', ok ? 'success' : 'error'));
 }
 
 function copyUrl() {
-  LSClip.copyToClipboard(BASE_URL + '/' + SLUG).then(ok => {
-    LSClip.toast(ok ? 'URL copied!' : 'Copy failed', ok ? 'success' : 'error');
-  });
+  LSClip.copyToClipboard(BASE_URL + '/' + SLUG).then(ok => LSClip.toast(ok ? 'URL copied!' : 'Copy failed', ok ? 'success' : 'error'));
 }
 
 async function showQR() {
@@ -632,27 +602,11 @@ async function showQR() {
   document.getElementById('qrUrl').textContent = BASE_URL + '/' + SLUG;
   try {
     if (typeof QRCode !== 'undefined') {
-      const container = document.getElementById('qrCodeContainer');
-      container.innerHTML = '';
-      new QRCode(container, { text: BASE_URL + '/' + SLUG, width: 180, height: 180 });
-    } else {
-      document.getElementById('qrCodeContainer').innerHTML = '<span>QR Code</span>';
-    }
-  } catch {
-    document.getElementById('qrCodeContainer').innerHTML = '<span>QR unavailable</span>';
-  }
-}
-
-function setupAutoSave() {
-  const editor = document.getElementById('editorContent');
-  editor.addEventListener('input', () => {
-    LSClip.updateCharCount();
-    markUnsaved();
-    clearTimeout(autoSaveTimer);
-    if (isUnsaved && clipData) {
-      autoSaveTimer = setTimeout(silentSave, 1500);
-    }
-  });
+      const c = document.getElementById('qrCodeContainer');
+      c.innerHTML = '';
+      new QRCode(c, { text: BASE_URL + '/' + SLUG, width: 180, height: 180 });
+    } else { document.getElementById('qrCodeContainer').innerHTML = '<span>QR Code</span>'; }
+  } catch { document.getElementById('qrCodeContainer').innerHTML = '<span>QR unavailable</span>'; }
 }
 
 function setupKeyboardShortcuts() {
@@ -665,17 +619,13 @@ function setupKeyboardShortcuts() {
 }
 
 async function silentSave() {
-  if (!isUnsaved || !editMode) return;
-  const content = document.getElementById('editorContent').innerHTML;
+  if (!isUnsaved || !editMode || !editor) return;
+  const content = editor.getHTML();
   const body = { content };
-  const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
-  if (storedPw) body.password = storedPw;
+  const spw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+  if (spw) body.password = spw;
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (r.ok) {
       clipData = await r.json();
       savedContent = content;
@@ -689,47 +639,21 @@ async function silentSave() {
   } catch {}
 }
 
-function setupToolbar() {
-  document.querySelectorAll('#toolbar .toolbar-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const action = btn.dataset.action;
-      if (!action) return;
-      document.execCommand(action, false, null);
-      document.getElementById('editorContent').focus();
-    });
-  });
-}
-
-function setupEditorContentEvents() {
-  const editor = document.getElementById('editorContent');
-  editor.addEventListener('input', () => LSClip.updateCharCount());
-  LSClip.updateCharCount();
-}
-
 function handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
-  if (file.size > 20 * 1024 * 1024) {
-    LSClip.toast('File must be under 20 MB', 'error');
-    return;
-  }
-  const formData = new FormData();
-  formData.append('file', file);
-  const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
-  const headers = {};
-  if (storedPw) headers['X-Password'] = storedPw;
-
-  fetch('/api/clips/' + encodeURIComponent(SLUG) + '/file', { method: 'POST', body: formData, headers })
+  if (file.size > 20 * 1024 * 1024) { LSClip.toast('File must be under 20 MB', 'error'); return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  const h = {};
+  const spw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+  if (spw) h['X-Password'] = spw;
+  fetch('/api/clips/' + encodeURIComponent(SLUG) + '/file', { method: 'POST', body: fd, headers: h })
     .then(r => r.json())
     .then(data => {
-      if (data.ok) {
-        LSClip.toast('File uploaded!', 'success');
-        if (data.file) showFileInfo(data.file);
-      } else {
-        LSClip.toast(data.error || 'Upload failed', 'error');
-      }
-    })
-    .catch(() => LSClip.toast('Upload failed', 'error'));
+      if (data.ok) { LSClip.toast('File uploaded!', 'success'); if (data.file) showFileInfo(data.file); }
+      else LSClip.toast(data.error || 'Upload failed', 'error');
+    }).catch(() => LSClip.toast('Upload failed', 'error'));
 }
 
 function showFileInfo(file) {
@@ -752,26 +676,32 @@ function formatDate(dateStr) {
 }
 
 async function deleteFile() {
-  const storedPw = sessionStorage.getItem('lsclip-pw-' + SLUG);
-  const headers = {};
-  if (storedPw) headers['X-Password'] = storedPw;
+  const h = {};
+  const spw = sessionStorage.getItem('lsclip-pw-' + SLUG);
+  if (spw) h['X-Password'] = spw;
   try {
-    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG) + '/file', {
-      method: 'DELETE',
-      headers
-    });
+    const r = await fetch('/api/clips/' + encodeURIComponent(SLUG) + '/file', { method: 'DELETE', headers: h });
     const data = await r.json();
     if (data.ok) {
       LSClip.toast('File deleted', 'error');
       document.getElementById('fileInfoRow').classList.add('hidden');
       document.getElementById('fileUploadField').classList.remove('hidden');
-    } else {
-      LSClip.toast(data.error || 'Delete failed', 'error');
-    }
-  } catch {
-    LSClip.toast('Network error', 'error');
-  }
+    } else LSClip.toast(data.error || 'Delete failed', 'error');
+  } catch { LSClip.toast('Network error', 'error'); }
 }
+
+window.unlockPrivate = unlockPrivate;
+window.unlockReadonly = unlockReadonly;
+window.copyUrl = copyUrl;
+window.copyContent = copyContent;
+window.showQR = showQR;
+window.toggleSettings = toggleSettings;
+window.saveClip = saveClip;
+window.deleteClip = deleteClip;
+window.deleteFile = deleteFile;
+window.handleFileSelect = handleFileSelect;
+window.selectAccessMode = selectAccessMode;
+window.selectPill = selectPill;
 
 loadClip();
 </script>
